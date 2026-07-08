@@ -1,0 +1,12 @@
+database:
+  type: sqlite
+  dbname: data/sales.db
+
+report:
+  template_path: templates/report_template.xlsx
+  output_dir: data/reports
+  pdf_output: true
+
+logging:
+  level: INFO
+  file: logs/reporting.log
