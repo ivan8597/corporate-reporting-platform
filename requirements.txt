@@ -1,0 +1,9 @@
+pandas
+numpy
+sqlalchemy
+pyyaml
+python-dotenv
+openpyxl
+pydantic
+pydantic-settings
+pytest
