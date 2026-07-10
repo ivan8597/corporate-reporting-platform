@@ -1,25 +1,45 @@
-import yaml
 from pathlib import Path
+import yaml
+from types import SimpleNamespace
 
 
-BASE_DIR = Path(__file__).resolve().parent
+CONFIG_PATH = Path(__file__).parent / "config.yaml"
 
 
-CONFIG_FILE = BASE_DIR / "config.yaml"
+def dict_to_namespace(data):
+    """
+    Преобразует dict в объект
+    для доступа через точку.
+    """
+
+    if isinstance(data, dict):
+        return SimpleNamespace(
+            **{
+                key: dict_to_namespace(value)
+                for key, value in data.items()
+            }
+        )
+
+    if isinstance(data, list):
+        return [
+            dict_to_namespace(item)
+            for item in data
+        ]
+
+    return data
 
 
 def load_config():
-    """
-    Загружает настройки из config.yaml
-    """
 
-    if not CONFIG_FILE.exists():
-        raise FileNotFoundError(
-            f"Config file not found: {CONFIG_FILE}"
-        )
+    with open(
+        CONFIG_PATH,
+        "r",
+        encoding="utf-8"
+    ) as file:
 
-    with open(CONFIG_FILE, "r", encoding="utf-8") as file:
-        return yaml.safe_load(file)
+        data = yaml.safe_load(file)
+
+    return dict_to_namespace(data)
 
 
 settings = load_config()
