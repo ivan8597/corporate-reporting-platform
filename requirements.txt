@@ -7,3 +7,6 @@ openpyxl
 pydantic
 pydantic-settings
 pytest
+fastapi
+uvicorn
+jinja2
