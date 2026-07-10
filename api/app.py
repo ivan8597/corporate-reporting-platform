@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 from pathlib import Path
 
 from database.connection import create_demo_data
@@ -96,6 +96,14 @@ def home():
         📈 Маржа:
         {margin} %
         </p>
+        <p>
+<a href="/download">
+    <button>
+        Скачать последний Excel-отчёт
+    </button>
+</a>
+      </p>
+
 
         <p>
         📦 Заказы:
@@ -133,18 +141,30 @@ def generate():
     )
 
 
-    return {
-        "status": "success",
-        "report": LAST_REPORT,
-        "kpi": LAST_KPI
-    }
+    return RedirectResponse(
+        url="/",
+        status_code=303
+    )
 
 
 
 @app.get("/download")
 def download():
 
+    if LAST_REPORT is None:
+        return {
+            "error": "Отчёт ещё не создан."
+        }
+
+    report = Path(LAST_REPORT)
+
+    if not report.exists():
+        return {
+            "error": "Файл отчёта не найден."
+        }
+
     return FileResponse(
-        LAST_REPORT,
-        filename="corporate_report.xlsx"
+        path=report,
+        filename=report.name,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
