@@ -10,3 +10,4 @@ pytest
 fastapi
 uvicorn
 jinja2
+ruff
