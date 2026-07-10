@@ -4,7 +4,7 @@ services:
     name: corporate-reporting
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: PYTHONPATH=. python main.py
+    startCommand: PYTHONPATH=. uvicorn api.app:app --host 0.0.0.0 --port 10000
     plan: free
     envVars:
       - key: DB_TYPE
