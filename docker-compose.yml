@@ -3,14 +3,65 @@ version: "3.9"
 
 services:
 
-  reporting-api:
+
+  postgres:
+
+    image: postgres:16
+
+    container_name: corporate-postgres
+
+    restart: always
+
+    environment:
+
+      POSTGRES_DB: corporate_reporting
+
+      POSTGRES_USER: report_user
+
+      POSTGRES_PASSWORD: report_password
+
+
+    ports:
+
+      - "5432:5432"
+
+
+    volumes:
+
+      - postgres_data:/var/lib/postgresql/data
+
+
+
+  api:
 
     build: .
 
-    container_name: corporate-reporting
+    container_name: corporate-api
+
+    depends_on:
+
+      - postgres
+
 
     ports:
+
       - "10000:10000"
 
+
     environment:
-      ENVIRONMENT: production
+
+      POSTGRES_HOST: postgres
+
+      POSTGRES_PORT: 5432
+
+      POSTGRES_DB: corporate_reporting
+
+      POSTGRES_USER: report_user
+
+      POSTGRES_PASSWORD: report_password
+
+
+
+volumes:
+
+  postgres_data:
