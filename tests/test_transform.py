@@ -17,24 +17,51 @@ def _sample_raw() -> pd.DataFrame:
     )
 
 
-def test_transform_uses_margin_rate():
+def test_transform_product_specific_margins():
+    """Маржа и profit зависят от продукта, а не от одной константы."""
+    df = transform_data(_sample_raw())
+    notebook = df.loc[df["product_name"] == "Ноутбук"].iloc[0]
+    mouse = df.loc[df["product_name"] == "Мышь"].iloc[0]
+
+    assert notebook["margin"] == pytest.approx(0.22)
+    assert mouse["margin"] == pytest.approx(0.48)
+    assert float(notebook["profit"]) == pytest.approx(1500 * 0.22, abs=0.01)
+    assert float(mouse["profit"]) == pytest.approx(800 * 0.48, abs=0.01)
+    # разные продукты → разная маржа
+    assert notebook["margin"] != mouse["margin"]
+
+
+def test_transform_uses_explicit_margin_rate():
     df = transform_data(_sample_raw(), margin_rate=0.25)
-    assert "profit" in df.columns
-    assert "margin" in df.columns
     assert (df["margin"] == 0.25).all()
-    # 1500 * 0.25 = 375
     assert float(df.loc[df["amount"] == 1500, "profit"].iloc[0]) == 375.0
 
 
+def test_transform_from_cost_column():
+    raw = pd.DataFrame(
+        {
+            "date": ["2024-01-15", "2024-02-01"],
+            "amount": [1000.0, 2000.0],
+            "cost": [700.0, 1200.0],
+            "product_name": ["Ноутбук", "Монитор"],
+        }
+    )
+    df = transform_data(raw)
+    assert float(df.iloc[0]["profit"]) == 300.0
+    assert float(df.iloc[0]["margin"]) == pytest.approx(0.3)
+    assert float(df.iloc[1]["profit"]) == 800.0
+    assert float(df.iloc[1]["margin"]) == pytest.approx(0.4)
+
+
 def test_transform_drops_duplicates_and_nulls():
-    df = transform_data(_sample_raw(), margin_rate=0.38)
+    df = transform_data(_sample_raw())
     # duplicate id=2 dropped, null amount dropped → 2 rows
     assert len(df) == 2
     assert df["amount"].notna().all()
 
 
 def test_transform_adds_year_month_and_quantity():
-    df = transform_data(_sample_raw().dropna(subset=["amount"]), margin_rate=0.38)
+    df = transform_data(_sample_raw().dropna(subset=["amount"]))
     assert "year_month" in df.columns
     assert "quantity" in df.columns
     assert (df["quantity"] == 1).all()
@@ -42,7 +69,7 @@ def test_transform_adds_year_month_and_quantity():
 
 
 def test_transform_data_quality_flag():
-    df = transform_data(_sample_raw(), margin_rate=0.38)
+    df = transform_data(_sample_raw())
     low = df[df["amount"] < 1000]
     assert (low["data_quality"] == "Низкая сумма").all()
     ok = df[df["amount"] >= 1000]

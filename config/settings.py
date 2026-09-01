@@ -1,4 +1,17 @@
+from __future__ import annotations
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Целевая маржа по продуктам (доля от выручки).
+# Используется, пока в источнике нет фактической себестоимости.
+PRODUCT_MARGIN_RATES: dict[str, float] = {
+    "Ноутбук": 0.22,
+    "Монитор": 0.28,
+    "Клавиатура": 0.45,
+    "Мышь": 0.48,
+    "Гарнитура": 0.35,
+}
 
 
 class Settings(BaseSettings):
@@ -11,8 +24,8 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "report_user"
     POSTGRES_PASSWORD: str = "report_password"
 
-    # Business defaults
-    DEFAULT_MARGIN_RATE: float = 0.38
+    # Fallback, если продукт не найден в PRODUCT_MARGIN_RATES
+    DEFAULT_MARGIN_RATE: float = 0.30
 
     # ML / anomaly detection
     ML_CONTAMINATION: float = 0.02

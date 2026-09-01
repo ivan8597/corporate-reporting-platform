@@ -2,10 +2,36 @@ from __future__ import annotations
 
 import pandas as pd
 
-from config.settings import settings
+from config.settings import PRODUCT_MARGIN_RATES, settings
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _resolve_margin_series(
+    df: pd.DataFrame,
+    margin_rate: float | None,
+) -> pd.Series:
+    """Маржа по строке: явный rate, либо ставка продукта, либо DEFAULT_MARGIN_RATE.
+
+    Если в данных уже есть колонки cost/себестоимость — profit считается как amount - cost,
+    margin = profit / amount.
+    """
+    if margin_rate is not None:
+        if not 0 < margin_rate < 1:
+            raise ValueError(f"margin_rate должен быть в (0, 1), получено: {margin_rate}")
+        return pd.Series(float(margin_rate), index=df.index, dtype=float)
+
+    if "product_name" in df.columns:
+        rates = (
+            df["product_name"]
+            .map(PRODUCT_MARGIN_RATES)
+            .fillna(settings.DEFAULT_MARGIN_RATE)
+            .astype(float)
+        )
+        return rates
+
+    return pd.Series(float(settings.DEFAULT_MARGIN_RATE), index=df.index, dtype=float)
 
 
 def transform_data(
@@ -14,16 +40,12 @@ def transform_data(
 ) -> pd.DataFrame:
     """Очистка и обогащение данных.
 
-    Маржа берётся из settings.DEFAULT_MARGIN_RATE (или явного аргумента),
-    а не хардкодится в теле функции.
+    profit и margin:
+    - если есть `cost` — profit = amount - cost, margin = profit / amount;
+    - иначе маржа по продукту из PRODUCT_MARGIN_RATES (разные ставки),
+      profit = amount * margin.
     """
     logger.info("Этап 2: ETL — Очистка и трансформация данных")
-
-    if margin_rate is None:
-        margin_rate = settings.DEFAULT_MARGIN_RATE
-
-    if not 0 < margin_rate < 1:
-        raise ValueError(f"margin_rate должен быть в (0, 1), получено: {margin_rate}")
 
     initial_rows = len(df)
 
@@ -36,17 +58,30 @@ def transform_data(
     df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
     df = df.dropna(subset=["amount"]).copy()
 
-    # Новые признаки
+    # Новые признаки периода
     df["month"] = df["date"].dt.to_period("M").astype(str)
     df["year_month"] = df["date"].dt.strftime("%Y-%m")
-    df["profit"] = (df["amount"] * margin_rate).round(2)
-    df["margin"] = float(margin_rate)
+
+    # profit / margin
+    if "cost" in df.columns and margin_rate is None:
+        df["cost"] = pd.to_numeric(df["cost"], errors="coerce")
+        df["profit"] = (df["amount"] - df["cost"]).round(2)
+        # защита от деления на ноль
+        df["margin"] = (
+            df["profit"] / df["amount"].replace(0, pd.NA)
+        ).fillna(0.0).round(4)
+    else:
+        margins = _resolve_margin_series(df, margin_rate)
+        df["margin"] = margins.round(4)
+        df["profit"] = (df["amount"] * df["margin"]).round(2)
 
     # quantity: если нет в источнике — считаем 1 (единица продажи)
     if "quantity" not in df.columns:
         df["quantity"] = 1
     else:
-        df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(1).astype(int)
+        df["quantity"] = (
+            pd.to_numeric(df["quantity"], errors="coerce").fillna(1).astype(int)
+        )
 
     # Контроль качества
     df["data_quality"] = "OK"
