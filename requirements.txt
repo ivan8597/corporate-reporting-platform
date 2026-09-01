@@ -13,3 +13,5 @@ fastapi
 uvicorn
 jinja2
 ruff
+scikit-learn
+joblib

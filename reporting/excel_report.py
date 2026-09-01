@@ -13,7 +13,8 @@ logger = get_logger(__name__)
 def generate_excel_report(
     df: pd.DataFrame,
     kpis: dict,
-    template_path="templates/report_template.xlsx"
+    template_path="templates/report_template.xlsx",
+    anomalies: pd.DataFrame | None = None,
 ):
     """
     Формирование Excel-отчёта без Microsoft Excel.
@@ -64,6 +65,15 @@ def generate_excel_report(
         ("Количество заказов", kpis["Total_Orders"]),
         ("Средний чек", kpis["Avg_Check"]),
     ]
+    if anomalies is not None and not anomalies.empty:
+        anomaly_mask = anomalies["anomaly_label"] == "Аномалия"
+        dashboard.extend(
+            [
+                ("Обнаружено аномалий", int(anomaly_mask.sum())),
+                ("Доля аномалий %", round(float(anomaly_mask.mean() * 100), 2)),
+                ("Максимальный anomaly score", round(float(anomalies["anomaly_score"].max()), 4)),
+            ]
+        )
 
 
     for row, item in enumerate(
@@ -160,6 +170,41 @@ def generate_excel_report(
                 column=col
             ).value = value
 
+
+    # --------------------
+    # Аномалии
+    # --------------------
+    if anomalies is not None:
+        anomaly_ws = wb.create_sheet("Аномалии")
+        anomaly_columns = [
+            column
+            for column in [
+                "id",
+                "date",
+                "product_id",
+                "product_name",
+                "manager_id",
+                "manager_name",
+                "amount",
+                "profit",
+                "margin",
+                "region",
+                "anomaly_score",
+                "anomaly_label",
+                "anomaly_reason",
+            ]
+            if column in anomalies.columns
+        ]
+        anomaly_data = anomalies.loc[
+            anomalies["anomaly_label"] == "Аномалия",
+            anomaly_columns,
+        ].sort_values("anomaly_score", ascending=False)
+        for col, name in enumerate(anomaly_columns, start=1):
+            anomaly_ws.cell(row=1, column=col).value = name
+        for row, data in enumerate(anomaly_data.head(100).itertuples(index=False), start=2):
+            for col, value in enumerate(data, start=1):
+                anomaly_ws.cell(row=row, column=col).value = value
+        anomaly_ws.freeze_panes = "A2"
 
     # --------------------
     # Ошибки данных

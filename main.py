@@ -6,7 +6,10 @@ from database.connection import create_demo_data
 from etl.extract import extract_data
 from etl.transform import transform_data
 from kpi.calculator import calculate_kpis
+from pathlib import Path
+
 from reporting.excel_report import generate_excel_report
+from ml.anomaly_detector import detect_anomalies, save_artifacts
 
 logger = get_logger(__name__)
 
@@ -28,8 +31,21 @@ def main() -> None:
         logger.info("Этап 3: Расчёт ключевых показателей...")
         kpis = calculate_kpis(clean_df)
 
-        logger.info("Этап 4: Создание профессионального Excel-отчёта...")
-        report_path = generate_excel_report(clean_df, kpis)
+        logger.info("Этап 4: Обнаружение аномалий...")
+        anomaly_df = detect_anomalies(clean_df)
+        anomaly_model_path, anomaly_metadata_path = save_artifacts(
+            anomaly_df,
+            Path("ml/models"),
+            contamination=0.02,
+        )
+        logger.info(
+            "Найдено аномалий: %s из %s",
+            int((anomaly_df["anomaly_label"] == "Аномалия").sum()),
+            len(anomaly_df),
+        )
+
+        logger.info("Этап 5: Создание профессионального Excel-отчёта...")
+        report_path = generate_excel_report(clean_df, kpis, anomalies=anomaly_df)
 
         # Итоговый summary
         duration = datetime.datetime.now() - start_time
@@ -40,6 +56,8 @@ def main() -> None:
         logger.info(f"📁 Отчёт сохранён: {report_path}")
         logger.info(f"💰 Общая выручка: {kpis.get('Total_Revenue', 'N/A'):,.2f} ₽")
         logger.info(f"📈 Маржинальность: {kpis.get('Avg_Margin_%', 'N/A')}%")
+        logger.info(f"🚨 Модель аномалий: {anomaly_model_path}")
+        logger.info(f"🧾 Метаданные аномалий: {anomaly_metadata_path}")
         logger.info("=" * 70)
 
     except Exception as e:

@@ -7,6 +7,7 @@ from etl.extract import extract_data
 from etl.transform import transform_data
 from kpi.calculator import calculate_kpis
 from reporting.excel_report import generate_excel_report
+from ml.anomaly_detector import detect_anomalies
 
 
 app = FastAPI(
@@ -18,6 +19,7 @@ app = FastAPI(
 
 LAST_REPORT = None
 LAST_KPI = {}
+LAST_ANOMALIES = None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -122,6 +124,7 @@ def generate():
 
     global LAST_REPORT
     global LAST_KPI
+    global LAST_ANOMALIES
 
 
     create_demo_data()
@@ -133,11 +136,12 @@ def generate():
 
 
     LAST_KPI = calculate_kpis(df)
-
+    LAST_ANOMALIES = detect_anomalies(df)
 
     LAST_REPORT = generate_excel_report(
         df,
-        LAST_KPI
+        LAST_KPI,
+        anomalies=LAST_ANOMALIES,
     )
 
 
@@ -146,6 +150,22 @@ def generate():
         status_code=303
     )
 
+
+
+@app.get("/anomalies")
+def anomalies():
+    if LAST_ANOMALIES is None:
+        return {"status": "not_ready", "count": 0, "anomalies": []}
+
+    anomaly_df = LAST_ANOMALIES.loc[
+        LAST_ANOMALIES["anomaly_label"] == "Аномалия"
+    ].copy()
+    anomaly_df["date"] = anomaly_df["date"].astype(str)
+    return {
+        "status": "ready",
+        "count": len(anomaly_df),
+        "anomalies": anomaly_df.to_dict(orient="records"),
+    }
 
 
 @app.get("/download")

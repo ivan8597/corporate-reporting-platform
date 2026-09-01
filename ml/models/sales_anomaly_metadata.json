@@ -1,0 +1,15 @@
+{
+  "model_type": "IsolationForest",
+  "features": [
+    "amount",
+    "profit",
+    "margin",
+    "quantity",
+    "hour",
+    "day_of_week"
+  ],
+  "contamination": 0.02,
+  "rows": 1350,
+  "anomalies": 24,
+  "anomaly_share_percent": 1.78
+}
