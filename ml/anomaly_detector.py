@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
+from config.settings import settings
+
 FEATURES = [
     "amount",
     "profit",
@@ -46,22 +48,49 @@ def prepare_features(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def _business_reason(row: pd.Series) -> str:
+    """Бизнес-объяснение, почему строка выглядит необычной для проверки аналитиком."""
+    reasons: list[str] = []
+
+    if row["amount"] >= 1_500:
+        reasons.append("аномально высокая сумма сделки")
+    if row["margin"] < 0.25:
+        reasons.append("маржа ниже целевой")
+    if row["quantity"] >= 3:
+        reasons.append("нетипично большой объём в одной транзакции")
+    if row["hour"] < 9 or row["hour"] >= 21:
+        reasons.append("продажа вне обычных рабочих часов")
+    if row.get("day_of_week") is not None and int(row["day_of_week"]) >= 5:
+        reasons.append("выходной день")
+
+    return "; ".join(reasons) if reasons else "необычная комбинация признаков"
+
+
 def detect_anomalies(
     df: pd.DataFrame,
-    contamination: float = 0.02,
-    random_state: int = 42,
+    contamination: float | None = None,
+    n_estimators: int | None = None,
+    random_state: int | None = None,
 ) -> pd.DataFrame:
-    """Обучает IsolationForest и добавляет anomaly_label и anomaly_score.
+    """Обучает IsolationForest и добавляет anomaly_label, anomaly_score, business_reason.
 
     anomaly_score больше означает более необычное наблюдение.
     IsolationForest.predict возвращает -1 для аномалий и 1 для обычных строк.
+    Параметры по умолчанию берутся из settings.
     """
+    if contamination is None:
+        contamination = settings.ML_CONTAMINATION
+    if n_estimators is None:
+        n_estimators = settings.ML_N_ESTIMATORS
+    if random_state is None:
+        random_state = settings.ML_RANDOM_STATE
+
     if not 0 < contamination < 0.5:
         raise ValueError("contamination должна быть между 0 и 0.5.")
 
     prepared = prepare_features(df)
     model = IsolationForest(
-        n_estimators=300,
+        n_estimators=n_estimators,
         contamination=contamination,
         random_state=random_state,
         n_jobs=-1,
@@ -70,34 +99,33 @@ def detect_anomalies(
 
     result = prepared.copy()
     result["anomaly_score"] = np.round(-model.score_samples(prepared[FEATURES]), 6)
-    result["anomaly_label"] = np.where(model.predict(prepared[FEATURES]) == -1, "Аномалия", "Норма")
-    result["anomaly_reason"] = result.apply(_reason, axis=1)
+    result["anomaly_label"] = np.where(
+        model.predict(prepared[FEATURES]) == -1, "Аномалия", "Норма"
+    )
+    result["business_reason"] = result.apply(_business_reason, axis=1)
+    # Обратная совместимость со старым именем колонки в отчётах
+    result["anomaly_reason"] = result["business_reason"]
     result.attrs["model"] = model
+    result.attrs["contamination"] = contamination
     return result
-
-
-def _reason(row: pd.Series) -> str:
-    """Даёт простое объяснение для пользователя отчёта."""
-    reasons = []
-    if row["amount"] >= 1_500:
-        reasons.append("высокая сумма")
-    if row["margin"] < 0.2:
-        reasons.append("низкая маржа")
-    if row["quantity"] >= 3:
-        reasons.append("большое количество")
-    if row["hour"] < 9 or row["hour"] >= 21:
-        reasons.append("нетипичное время")
-    return ", ".join(reasons) if reasons else "комбинация признаков"
 
 
 def save_artifacts(
     result: pd.DataFrame,
-    model_dir: Path,
-    contamination: float,
+    model_dir: Path | str | None = None,
+    contamination: float | None = None,
 ) -> tuple[Path, Path]:
     model = result.attrs.get("model")
     if model is None:
         raise ValueError("В result отсутствует обученная модель.")
+
+    if model_dir is None:
+        model_dir = Path(settings.ML_MODEL_DIR)
+    else:
+        model_dir = Path(model_dir)
+
+    if contamination is None:
+        contamination = result.attrs.get("contamination", settings.ML_CONTAMINATION)
 
     model_dir.mkdir(parents=True, exist_ok=True)
     model_path = model_dir / "sales_anomaly_model.joblib"
@@ -108,6 +136,8 @@ def save_artifacts(
         "model_type": "IsolationForest",
         "features": FEATURES,
         "contamination": contamination,
+        "n_estimators": getattr(model, "n_estimators", settings.ML_N_ESTIMATORS),
+        "random_state": getattr(model, "random_state", settings.ML_RANDOM_STATE),
         "rows": int(len(result)),
         "anomalies": int((result["anomaly_label"] == "Аномалия").sum()),
         "anomaly_share_percent": round(
