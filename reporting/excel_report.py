@@ -191,6 +191,7 @@ def generate_excel_report(
                 "region",
                 "anomaly_score",
                 "anomaly_label",
+                "business_reason",
                 "anomaly_reason",
             ]
             if column in anomalies.columns
