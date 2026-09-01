@@ -1,45 +1,26 @@
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 from pathlib import Path
 
-from database.connection import create_demo_data
-from etl.extract import extract_data
-from etl.transform import transform_data
-from kpi.calculator import calculate_kpis
-from reporting.excel_report import generate_excel_report
-from ml.anomaly_detector import detect_anomalies
+from fastapi import FastAPI
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
+from pipeline.orchestrator import run_pipeline
+from services.report_store import report_store
 
 app = FastAPI(
     title="Corporate Reporting Platform",
     description="Автоматизация корпоративной отчётности",
-    version="1.0"
+    version="1.1",
 )
-
-
-LAST_REPORT = None
-LAST_KPI = {}
-LAST_ANOMALIES = None
 
 
 @app.get("/", response_class=HTMLResponse)
 def home():
-
-    revenue = LAST_KPI.get(
-        "Total_Revenue",
-        0
-    )
-
-    margin = LAST_KPI.get(
-        "Avg_Margin_%",
-        0
-    )
-
-    orders = LAST_KPI.get(
-        "Total_Orders",
-        0
-    )
-
+    kpis = report_store.get_kpis()
+    revenue = kpis.get("Total_Revenue", 0)
+    margin = kpis.get("Avg_Margin_%", 0)
+    orders = kpis.get("Total_Orders", 0)
+    mom = kpis.get("MoM_Growth_%")
+    mom_display = f"{mom} %" if mom is not None else "N/A"
 
     return f"""
     <html>
@@ -50,70 +31,40 @@ def home():
                     font-family: Arial;
                     margin: 40px;
                 }}
-
                 .card {{
                     padding:20px;
                     border-radius:10px;
                     background:#f2f2f2;
-                    width:400px;
+                    width:420px;
                 }}
-
                 button {{
                     padding:12px;
                     background:#1976d2;
                     color:white;
                     border:none;
                     border-radius:5px;
+                    cursor: pointer;
                 }}
             </style>
         </head>
-
         <body>
-
-        <h1>
-        📊 Корпоративная платформа отчётности
-        </h1>
-
-
+        <h1>📊 Корпоративная платформа отчётности</h1>
         <form action="/generate" method="post">
-            <button>
-            Сгенерировать отчёт
-            </button>
+            <button type="submit">Сгенерировать отчёт</button>
         </form>
-
-
         <br>
-
-
         <div class="card">
-
         <h2>KPI</h2>
-
+        <p>💰 Выручка: {revenue} ₽</p>
+        <p>📈 Маржа: {margin} %</p>
+        <p>📉 MoM рост: {mom_display}</p>
+        <p>📦 Заказы: {orders}</p>
         <p>
-        💰 Выручка:
-        {revenue} ₽
+            <a href="/download">
+                <button type="button">Скачать последний Excel-отчёт</button>
+            </a>
         </p>
-
-        <p>
-        📈 Маржа:
-        {margin} %
-        </p>
-        <p>
-<a href="/download">
-    <button>
-        Скачать последний Excel-отчёт
-    </button>
-</a>
-      </p>
-
-
-        <p>
-        📦 Заказы:
-        {orders}
-        </p>
-
         </div>
-
         </body>
     </html>
     """
@@ -121,67 +72,42 @@ def home():
 
 @app.post("/generate")
 def generate():
-
-    global LAST_REPORT
-    global LAST_KPI
-    global LAST_ANOMALIES
-
-
-    create_demo_data()
-
-
-    df = extract_data()
-
-    df = transform_data(df)
-
-
-    LAST_KPI = calculate_kpis(df)
-    LAST_ANOMALIES = detect_anomalies(df)
-
-    LAST_REPORT = generate_excel_report(
-        df,
-        LAST_KPI,
-        anomalies=LAST_ANOMALIES,
+    result = run_pipeline(init_demo_data=True, save_ml_artifacts=True)
+    report_store.update(
+        report_path=result.report_path,
+        kpis=result.kpis,
+        anomalies=result.anomalies,
     )
-
-
-    return RedirectResponse(
-        url="/",
-        status_code=303
-    )
-
+    return RedirectResponse(url="/", status_code=303)
 
 
 @app.get("/anomalies")
 def anomalies():
-    if LAST_ANOMALIES is None:
+    anomaly_df = report_store.get_anomalies()
+    if anomaly_df is None:
         return {"status": "not_ready", "count": 0, "anomalies": []}
 
-    anomaly_df = LAST_ANOMALIES.loc[
-        LAST_ANOMALIES["anomaly_label"] == "Аномалия"
-    ].copy()
-    anomaly_df["date"] = anomaly_df["date"].astype(str)
+    filtered = anomaly_df.loc[anomaly_df["anomaly_label"] == "Аномалия"].copy()
+    if "date" in filtered.columns:
+        filtered["date"] = filtered["date"].astype(str)
+
+    records = filtered.to_dict(orient="records")
     return {
         "status": "ready",
-        "count": len(anomaly_df),
-        "anomalies": anomaly_df.to_dict(orient="records"),
+        "count": len(filtered),
+        "anomalies": records,
     }
 
 
 @app.get("/download")
 def download():
+    report_path = report_store.get_report_path()
+    if report_path is None:
+        return {"error": "Отчёт ещё не создан."}
 
-    if LAST_REPORT is None:
-        return {
-            "error": "Отчёт ещё не создан."
-        }
-
-    report = Path(LAST_REPORT)
-
+    report = Path(report_path)
     if not report.exists():
-        return {
-            "error": "Файл отчёта не найден."
-        }
+        return {"error": "Файл отчёта не найден."}
 
     return FileResponse(
         path=report,
