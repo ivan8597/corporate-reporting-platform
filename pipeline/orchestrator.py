@@ -1,18 +1,15 @@
-"""Оркестрация полного пайплайна отчётности.
-
-Вынесена из main.py и api/app.py, чтобы оба входа использовали одну логику.
-"""
+"""Оркестрация полного пайплайна отчётности."""
 
 from __future__ import annotations
 
 import datetime
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
-from database.connection import create_demo_data
 from etl.extract import extract_data
 from etl.transform import transform_data
 from kpi.calculator import calculate_kpis
@@ -25,6 +22,7 @@ logger = get_logger(__name__)
 
 @dataclass
 class PipelineResult:
+    run_id: str
     clean_df: pd.DataFrame
     kpis: dict[str, Any]
     anomalies: pd.DataFrame
@@ -36,29 +34,34 @@ class PipelineResult:
 
 def run_pipeline(
     *,
-    init_demo_data: bool = True,
+    init_demo_data: bool = False,
     save_ml_artifacts: bool = True,
     model_dir: Path | str | None = None,
 ) -> PipelineResult:
-    """Полный цикл: demo-данные → ETL → KPI → аномалии → Excel-отчёт."""
+    """Полный цикл: ETL → KPI → аномалии → Excel-отчёт.
+
+    Demo-данные отключены по умолчанию. Для локальной демонстрации вызывающий
+    код может явно передать ``init_demo_data=True``.
+    """
+    run_id = str(uuid.uuid4())
     start = datetime.datetime.now()
-    logger.info("=" * 70)
-    logger.info("🚀 Запуск пайплайна корпоративной отчётности")
-    logger.info(f"Время старта: {start.strftime('%Y-%m-%d %H:%M:%S')}")
-    logger.info("=" * 70)
+    logger.info("[%s] Запуск пайплайна корпоративной отчётности", run_id)
+    logger.info("[%s] Время старта: %s", run_id, start.strftime("%Y-%m-%d %H:%M:%S"))
 
     if init_demo_data:
-        logger.info("Инициализация базы данных (demo)...")
+        from database.seed import create_demo_data
+
+        logger.info("[%s] Инициализация базы данных (demo)...", run_id)
         create_demo_data()
 
-    logger.info("Этап 1-2: Извлечение и трансформация данных...")
+    logger.info("[%s] Этап 1-2: Извлечение и трансформация данных...", run_id)
     raw_df = extract_data()
     clean_df = transform_data(raw_df)
 
-    logger.info("Этап 3: Расчёт KPI...")
+    logger.info("[%s] Этап 3: Расчёт KPI...", run_id)
     kpis = calculate_kpis(clean_df)
 
-    logger.info("Этап 4: Обнаружение аномалий...")
+    logger.info("[%s] Этап 4: Обнаружение аномалий...", run_id)
     anomaly_df = detect_anomalies(clean_df)
 
     anomaly_model_path: Path | None = None
@@ -69,16 +72,18 @@ def run_pipeline(
             model_dir=model_dir,
         )
         logger.info(
-            "Найдено аномалий: %s из %s",
+            "[%s] Найдено аномалий: %s из %s",
+            run_id,
             int((anomaly_df["anomaly_label"] == "Аномалия").sum()),
             len(anomaly_df),
         )
 
-    logger.info("Этап 5: Формирование Excel-отчёта...")
+    logger.info("[%s] Этап 5: Формирование Excel-отчёта...", run_id)
     report_path = generate_excel_report(clean_df, kpis, anomalies=anomaly_df)
 
     duration = (datetime.datetime.now() - start).total_seconds()
     result = PipelineResult(
+        run_id=run_id,
         clean_df=clean_df,
         kpis=kpis,
         anomalies=anomaly_df,
@@ -88,14 +93,7 @@ def run_pipeline(
         duration_seconds=duration,
     )
 
-    logger.info("=" * 70)
-    logger.info("✅ Пайплайн успешно завершён")
-    logger.info(f"⏱ Время: {duration:.1f} с")
-    logger.info(f"📊 Строк: {len(clean_df):,}")
-    logger.info(f"📁 Отчёт: {report_path}")
-    logger.info(f"💰 Выручка: {kpis.get('Total_Revenue', 'N/A'):,.2f} ₽")
-    mom = kpis.get("MoM_Growth_%")
-    logger.info(f"📈 MoM рост: {mom if mom is not None else 'N/A'}%")
-    logger.info("=" * 70)
-
+    logger.info("[%s] Пайплайн успешно завершён за %.1f с", run_id, duration)
+    logger.info("[%s] Строк: %s", run_id, f"{len(clean_df):,}")
+    logger.info("[%s] Отчёт: %s", run_id, report_path)
     return result
