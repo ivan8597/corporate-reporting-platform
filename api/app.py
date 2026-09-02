@@ -2,15 +2,34 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from sqlalchemy import text
 
+from database.connection import get_engine
 from pipeline.orchestrator import run_pipeline
 from services.report_store import report_store
 
 app = FastAPI(
     title="Corporate Reporting Platform",
     description="Автоматизация корпоративной отчётности",
-    version="1.1",
+    version="1.2",
 )
+
+
+@app.get("/health")
+def health():
+    """Liveness check: процесс API запущен."""
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready():
+    """Readiness check: API может подключиться к базе данных."""
+    try:
+        with get_engine().connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return {"status": "ready", "database": "ok"}
+    except Exception as exc:
+        return {"status": "not_ready", "database": "error", "error": str(exc)}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -27,24 +46,9 @@ def home():
         <head>
             <title>Corporate Reporting Platform</title>
             <style>
-                body {{
-                    font-family: Arial;
-                    margin: 40px;
-                }}
-                .card {{
-                    padding:20px;
-                    border-radius:10px;
-                    background:#f2f2f2;
-                    width:420px;
-                }}
-                button {{
-                    padding:12px;
-                    background:#1976d2;
-                    color:white;
-                    border:none;
-                    border-radius:5px;
-                    cursor: pointer;
-                }}
+                body {{ font-family: Arial; margin: 40px; }}
+                .card {{ padding:20px; border-radius:10px; background:#f2f2f2; width:420px; }}
+                button {{ padding:12px; background:#1976d2; color:white; border:none; border-radius:5px; cursor:pointer; }}
             </style>
         </head>
         <body>
@@ -59,11 +63,7 @@ def home():
         <p>📈 Маржа: {margin} %</p>
         <p>📉 MoM рост: {mom_display}</p>
         <p>📦 Заказы: {orders}</p>
-        <p>
-            <a href="/download">
-                <button type="button">Скачать последний Excel-отчёт</button>
-            </a>
-        </p>
+        <p><a href="/download"><button type="button">Скачать последний Excel-отчёт</button></a></p>
         </div>
         </body>
     </html>
@@ -72,6 +72,7 @@ def home():
 
 @app.post("/generate")
 def generate():
+    # Demo-режим запускается только явным параметром, а не по умолчанию.
     result = run_pipeline(init_demo_data=True, save_ml_artifacts=True)
     report_store.update(
         report_path=result.report_path,
@@ -91,11 +92,10 @@ def anomalies():
     if "date" in filtered.columns:
         filtered["date"] = filtered["date"].astype(str)
 
-    records = filtered.to_dict(orient="records")
     return {
         "status": "ready",
         "count": len(filtered),
-        "anomalies": records,
+        "anomalies": filtered.to_dict(orient="records"),
     }
 
 
