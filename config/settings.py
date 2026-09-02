@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 # Целевая маржа по продуктам (доля от выручки).
 # Используется, пока в источнике нет фактической себестоимости.
 PRODUCT_MARGIN_RATES: dict[str, float] = {

@@ -1,5 +1,4 @@
 import pandas as pd
-import pytest
 
 from kpi.calculator import _calculate_mom_growth, calculate_kpis
 

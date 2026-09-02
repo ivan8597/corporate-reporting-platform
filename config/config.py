@@ -1,7 +1,7 @@
 from pathlib import Path
-import yaml
 from types import SimpleNamespace
 
+import yaml
 
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
 
