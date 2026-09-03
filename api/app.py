@@ -1,7 +1,12 @@
-from pathlib import Path
+from __future__ import annotations
 
-from fastapi import FastAPI
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
 
 from pipeline.orchestrator import run_pipeline
 from services.report_store import report_store
@@ -9,94 +14,86 @@ from services.report_store import report_store
 app = FastAPI(
     title="Corporate Reporting Platform",
     description="Автоматизация корпоративной отчётности",
-    version="1.1",
+    version="1.2",
 )
+templates = Jinja2Templates(directory="templates")
+
+
+class AnomalyResponse(BaseModel):
+    status: str
+    count: int
+    anomalies: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class GenerateResponse(BaseModel):
+    status: str
+    report_path: str
+    rows: int
+    duration_seconds: float
+    kpis: dict[str, Any]
+    anomalies: int
 
 
 @app.get("/", response_class=HTMLResponse)
-def home():
+def home(request: Request):
     kpis = report_store.get_kpis()
-    revenue = kpis.get("Total_Revenue", 0)
-    margin = kpis.get("Avg_Margin_%", 0)
-    orders = kpis.get("Total_Orders", 0)
-    mom = kpis.get("MoM_Growth_%")
-    mom_display = f"{mom} %" if mom is not None else "N/A"
+    anomalies = report_store.get_anomalies()
+    anomaly_count = 0
+    if anomalies is not None:
+        anomaly_count = int((anomalies["anomaly_label"] == "Аномалия").sum())
 
-    return f"""
-    <html>
-        <head>
-            <title>Corporate Reporting Platform</title>
-            <style>
-                body {{
-                    font-family: Arial;
-                    margin: 40px;
-                }}
-                .card {{
-                    padding:20px;
-                    border-radius:10px;
-                    background:#f2f2f2;
-                    width:420px;
-                }}
-                button {{
-                    padding:12px;
-                    background:#1976d2;
-                    color:white;
-                    border:none;
-                    border-radius:5px;
-                    cursor: pointer;
-                }}
-            </style>
-        </head>
-        <body>
-        <h1>📊 Корпоративная платформа отчётности</h1>
-        <form action="/generate" method="post">
-            <button type="submit">Сгенерировать отчёт</button>
-        </form>
-        <br>
-        <div class="card">
-        <h2>KPI</h2>
-        <p>💰 Выручка: {revenue} ₽</p>
-        <p>📈 Маржа: {margin} %</p>
-        <p>📉 MoM рост: {mom_display}</p>
-        <p>📦 Заказы: {orders}</p>
-        <p>
-            <a href="/download">
-                <button type="button">Скачать последний Excel-отчёт</button>
-            </a>
-        </p>
-        </div>
-        </body>
-    </html>
-    """
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={
+            "revenue": kpis.get("Total_Revenue", 0),
+            "margin": kpis.get("Avg_Margin_%", 0),
+            "mom": f"{kpis['MoM_Growth_%']} %" if "MoM_Growth_%" in kpis else "N/A",
+            "orders": kpis.get("Total_Orders", 0),
+            "anomalies": anomaly_count,
+        },
+    )
 
 
-@app.post("/generate")
-def generate():
+@app.post("/generate", response_model=GenerateResponse)
+def generate() -> GenerateResponse:
     result = run_pipeline(init_demo_data=False, save_ml_artifacts=True)
     report_store.update(
         report_path=result.report_path,
         kpis=result.kpis,
         anomalies=result.anomalies,
     )
+    anomaly_count = int((result.anomalies["anomaly_label"] == "Аномалия").sum())
+    return GenerateResponse(
+        status="success",
+        report_path=result.report_path,
+        rows=len(result.clean_df),
+        duration_seconds=round(result.duration_seconds, 3),
+        kpis=result.kpis,
+        anomalies=anomaly_count,
+    )
+
+
+@app.post("/generate/view", response_class=RedirectResponse)
+def generate_view() -> RedirectResponse:
+    generate()
     return RedirectResponse(url="/", status_code=303)
 
 
-@app.get("/anomalies")
-def anomalies():
+@app.get("/anomalies", response_model=AnomalyResponse)
+def anomalies() -> AnomalyResponse:
     anomaly_df = report_store.get_anomalies()
     if anomaly_df is None:
-        return {"status": "not_ready", "count": 0, "anomalies": []}
+        return AnomalyResponse(status="not_ready", count=0)
 
     filtered = anomaly_df.loc[anomaly_df["anomaly_label"] == "Аномалия"].copy()
     if "date" in filtered.columns:
         filtered["date"] = filtered["date"].astype(str)
-
-    records = filtered.to_dict(orient="records")
-    return {
-        "status": "ready",
-        "count": len(filtered),
-        "anomalies": records,
-    }
+    return AnomalyResponse(
+        status="ready",
+        count=len(filtered),
+        anomalies=filtered.to_dict(orient="records"),
+    )
 
 
 @app.get("/download")
