@@ -68,12 +68,11 @@ def test_transform_adds_year_month_and_quantity():
     assert set(df["year_month"]) <= {"2024-01", "2024-02"}
 
 
-def test_transform_data_quality_flag():
+def test_transform_quality_and_business_segment_are_separate():
     df = transform_data(_sample_raw())
     low = df[df["amount"] < 1000]
-    assert (low["data_quality"] == "Низкая сумма").all()
-    ok = df[df["amount"] >= 1000]
-    assert (ok["data_quality"] == "OK").all()
+    assert (low["business_segment"] == "low_value").all()
+    assert (df["data_quality"] == "valid").all()
 
 
 def test_invalid_margin_rate():

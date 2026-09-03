@@ -72,7 +72,7 @@ def home():
 
 @app.post("/generate")
 def generate():
-    result = run_pipeline(init_demo_data=True, save_ml_artifacts=True)
+    result = run_pipeline(init_demo_data=False, save_ml_artifacts=True)
     report_store.update(
         report_path=result.report_path,
         kpis=result.kpis,

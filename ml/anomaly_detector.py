@@ -103,8 +103,6 @@ def detect_anomalies(
         model.predict(prepared[FEATURES]) == -1, "Аномалия", "Норма"
     )
     result["business_reason"] = result.apply(_business_reason, axis=1)
-    # Обратная совместимость со старым именем колонки в отчётах
-    result["anomaly_reason"] = result["business_reason"]
     result.attrs["model"] = model
     result.attrs["contamination"] = contamination
     return result

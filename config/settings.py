@@ -14,6 +14,7 @@ PRODUCT_MARGIN_RATES: dict[str, float] = {
 
 
 class Settings(BaseSettings):
+    APP_ENV: str = "production"
     DB_TYPE: str = "sqlite"
     DB_NAME: str = "data/sales.db"
 

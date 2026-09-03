@@ -126,3 +126,9 @@ htmlcov/
 # =========================
 
 .render/
+
+# Generated ML artifacts
+ml/models/*.joblib
+ml/models/*.pkl
+ml/models/*.json
+!ml/models/.gitkeep

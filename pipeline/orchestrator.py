@@ -12,7 +12,6 @@ from typing import Any
 
 import pandas as pd
 
-from database.connection import create_demo_data
 from etl.extract import extract_data
 from etl.transform import transform_data
 from kpi.calculator import calculate_kpis
@@ -36,7 +35,7 @@ class PipelineResult:
 
 def run_pipeline(
     *,
-    init_demo_data: bool = True,
+    init_demo_data: bool = False,
     save_ml_artifacts: bool = True,
     model_dir: Path | str | None = None,
 ) -> PipelineResult:
@@ -49,6 +48,8 @@ def run_pipeline(
 
     if init_demo_data:
         logger.info("Инициализация базы данных (demo)...")
+        from database.seed import create_demo_data
+
         create_demo_data()
 
     logger.info("Этап 1-2: Извлечение и трансформация данных...")

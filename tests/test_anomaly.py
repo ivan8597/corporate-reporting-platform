@@ -44,7 +44,7 @@ def test_detect_anomalies_labels_and_business_reason():
     assert "anomaly_label" in result.columns
     assert "anomaly_score" in result.columns
     assert "business_reason" in result.columns
-    assert "anomaly_reason" in result.columns  # backwards compat
+    assert "anomaly_reason" not in result.columns
 
     labels = set(result["anomaly_label"].unique())
     assert labels <= {"Аномалия", "Норма"}
