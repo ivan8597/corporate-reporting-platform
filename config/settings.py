@@ -37,6 +37,16 @@ class Settings(BaseSettings):
     OUTPUT_DIR: str = "data/reports"
     TEMPLATE_PATH: str = "templates/report_template.xlsx"
 
+    @property
+    def database_url(self) -> str:
+        if self.DB_TYPE.lower() == "sqlite":
+            return f"sqlite:///{self.DB_NAME}"
+        return (
+            "postgresql+psycopg2://"
+            f"{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@"
+            f"{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
