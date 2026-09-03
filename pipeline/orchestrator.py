@@ -15,7 +15,7 @@ import pandas as pd
 from etl.extract import extract_data
 from etl.transform import transform_data
 from kpi.calculator import calculate_kpis
-from ml.anomaly_detector import detect_anomalies, save_artifacts
+from ml.train import train_anomaly_model
 from reporting.excel_report import generate_excel_report
 from utils.logger import get_logger
 
@@ -59,21 +59,24 @@ def run_pipeline(
     logger.info("Этап 3: Расчёт KPI...")
     kpis = calculate_kpis(clean_df)
 
-    logger.info("Этап 4: Обнаружение аномалий...")
-    anomaly_df = detect_anomalies(clean_df)
-
+    logger.info("Этап 4: Обучение и обнаружение аномалий...")
     anomaly_model_path: Path | None = None
     anomaly_metadata_path: Path | None = None
     if save_ml_artifacts:
-        anomaly_model_path, anomaly_metadata_path = save_artifacts(
-            anomaly_df,
+        anomaly_df, anomaly_model_path, anomaly_metadata_path = train_anomaly_model(
+            clean_df,
             model_dir=model_dir,
         )
-        logger.info(
-            "Найдено аномалий: %s из %s",
-            int((anomaly_df["anomaly_label"] == "Аномалия").sum()),
-            len(anomaly_df),
-        )
+    else:
+        from ml.anomaly_detector import detect_anomalies
+
+        anomaly_df = detect_anomalies(clean_df)
+
+    logger.info(
+        "Найдено аномалий: %s из %s",
+        int((anomaly_df["anomaly_label"] == "Аномалия").sum()),
+        len(anomaly_df),
+    )
 
     logger.info("Этап 5: Формирование Excel-отчёта...")
     report_path = generate_excel_report(clean_df, kpis, anomalies=anomaly_df)
