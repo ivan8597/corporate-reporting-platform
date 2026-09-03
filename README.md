@@ -171,3 +171,51 @@ python -m database.init_db --seed
 ETL не смешивает техническую валидность строки с её коммерческой ценностью. Поле `data_quality` содержит статусы `valid`, `missing_amount`, `invalid_date`, `negative_amount`, `zero_amount` и `invalid_quantity`. Поле `business_segment` содержит `low_value`, `medium_value` или `high_value` и используется для бизнес-аналитики.
 
 Низкая сумма сделки не считается ошибкой данных: это корректная бизнес-характеристика, а не признак повреждённой записи.
+
+
+## Раздельные ML train, inference и evaluation
+
+Обучение и применение модели разделены по модулям:
+
+```text
+ml/train.py      — обучение IsolationForest и сохранение artifact
+ml/inference.py  — загрузка artifact и предсказание новых строк
+ml/evaluate.py   — precision/recall/F1 на ручной разметке
+```
+
+Обычный pipeline сохраняет предсказания в `data/reports/anomaly_predictions.csv`. Для ручной валидации скопируйте шаблон:
+
+```bash
+cp data/anomaly_labels.example.csv data/anomaly_labels.csv
+```
+
+Заполните `id`, `is_anomaly` и комментарий проверяющего, затем выполните:
+
+```bash
+python -m ml.evaluate \
+  --predictions data/reports/anomaly_predictions.csv \
+  --labels data/anomaly_labels.csv
+```
+
+Только строки, прошедшие ручную проверку, используются для precision, recall и F1. До появления такой разметки эти метрики не следует указывать в резюме.
+
+## Миграции базы данных
+
+Схема базы управляется Alembic:
+
+```bash
+alembic upgrade head
+```
+
+Для новой локальной базы с demo-данными:
+
+```bash
+alembic upgrade head
+python -m database.init_db --seed
+```
+
+Откат последней миграции:
+
+```bash
+alembic downgrade -1
+```

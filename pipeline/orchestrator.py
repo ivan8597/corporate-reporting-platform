@@ -78,6 +78,11 @@ def run_pipeline(
         len(anomaly_df),
     )
 
+    predictions_path = Path("data/reports/anomaly_predictions.csv")
+    predictions_path.parent.mkdir(parents=True, exist_ok=True)
+    anomaly_df.to_csv(predictions_path, index=False)
+    logger.info("Предсказания аномалий сохранены: %s", predictions_path)
+
     logger.info("Этап 5: Формирование Excel-отчёта...")
     report_path = generate_excel_report(clean_df, kpis, anomalies=anomaly_df)
 
